@@ -2,9 +2,9 @@
 
 //https://rapidapi.com/DataCrawler/api/booking-com15/playground/
 
-// API Credentials inline
+// API Credentials
 $apiKey = 'e94c9a6ee3msh4edb9659d89f741p184c00jsn275c5acc7dba';
-$apiHost = 'booking-com15.p.rapidapi.com';
+$apiHost = 'booking-com.p.rapidapi.com';
 
 // Function to make a GET request to RapidAPI
 function fetchFromRapidAPI($url, $apiKey, $apiHost) {
@@ -30,33 +30,35 @@ function fetchFromRapidAPI($url, $apiKey, $apiHost) {
 }
 
 // Get destination ID for Dubai
-$destSearchUrl = "https://$apiHost/api/v1/hotels/searchDestination?query=dubai";
+$destSearchUrl = "https://$apiHost/v1/hotels/locations?locale=en-gb&name=Dubai";
 $destData = fetchFromRapidAPI($destSearchUrl, $apiKey, $apiHost);
 
 // Check if destination ID is found
-if (!isset($destData['data'][0]['dest_id'])) {
+if (!isset($destData[0]['dest_id']) && ($destData[0]['name'] != "Dubai")) {
     die(json_encode(["error" => "Destination ID for Dubai not found."]));
 }
 
-$destId = $destData['data'][0]['dest_id'];
-$destType = $destData['data'][0]['search_type'];
+$destId = $destData[0]['dest_id'];
 
 // Search for hotels
 $params = [
+    'adults_number' => 2,
+    'locale' => 'en-gb',
+    'dest_type' => 'city',
+    'filter_by_currency' => 'USD',
     'dest_id' => $destId,
-    'search_type' => $destType,
-    'arrival_date' => '2025-07-01',
-    'departure_date' => '2025-07-05',
-    'adults' => 2,
-    'room_qty' => 1,
-    'currency_code' => 'USD',
+    'order_by' => 'popularity',
+    'units' => 'metric',
+    'checkout_date' => '2025-07-05',
+    'room_number' => 1,
+    'checkin_date' => '2025-07-01'
 ];
 
-$hotelSearchUrl = "https://$apiHost/api/v1/hotels/searchHotels?" . http_build_query($params);
+$hotelSearchUrl = "https://$apiHost/v1/hotels/search?" . http_build_query($params);
 $hotelResponse = fetchFromRapidAPI($hotelSearchUrl, $apiKey, $apiHost);
 
-// Check hotel list
-if (!isset($hotelResponse['data']['hotels']) || !is_array($hotelResponse['data']['hotels'])) {
+// Check if we have results
+if (!isset($hotelResponse['result']) || !is_array($hotelResponse['result'])) {
     die(json_encode(["error" => "No hotel data returned."]));
 }
 
@@ -65,23 +67,22 @@ $hotelData = [];
 $nights = 4; // number of nights (July 1 to July 5, 2025)
 
 //Map fields from the API response
-foreach ($hotelResponse['data']['hotels'] as $hotel) {
-    $property = $hotel['property'] ?? [];
-    $price = floatval($property['priceBreakdown']['grossPrice']['value'] ?? 0);
-    $pricePerNight = $price / $nights; // price per night for 4 nights
-    $location = ($property['city'] ?? "Dubai") . ' ' . ($property['country'] ?? "UAE");
+foreach ($hotelResponse['result'] as $hotel) {
+    $price = floatval($hotel['composite_price_breakdown']['gross_amount_hotel_currency']['value'] ?? 0);
+    $pricePerNight = floatval($hotel['composite_price_breakdown']['gross_amount_per_night']['value'] ?? 0);
+    $location = $hotel['city_name_en'] . ', ' . $hotel['country_trans'];
 
     //to append formatted objects to $hotelData
     $hotelData[] = (object)[
         "hotel_id" => $hotel['hotel_id'] ?? '',
-        "img" => $property['photoUrls'][0] ?? '',
-        "name" => $property['name'] ?? '',
-        "location" =>  $location, // Not provided in API response
-        "address" => $property['address'] ?? '', // Not provided in API response
-        "stars" => $property['accuratePropertyClass'] ?? '', 
-        "rating" => floatval($property['reviewScore'] ?? 0),
-        "latitude" => floatval($property['latitude'] ?? 0),
-        "longitude" => floatval($property['longitude'] ?? 0),
+        "img" => $hotel['main_photo_url'] ?? '',
+        "name" => $hotel['hotel_name'] ?? '',
+        "location" => $location,
+        "address" => $hotel['address_trans'] ?? '',
+        "stars" => $hotel['class'] ?? '', 
+        "rating" => floatval($hotel['review_score'] ?? 0),
+        "latitude" => floatval($hotel['latitude'] ?? 0),
+        "longitude" => floatval($hotel['longitude'] ?? 0),
         "actual_price" => round($price, 2),
         "actual_price_per_night" => round($pricePerNight, 2), 
         "markup_price" => round(floatval($price * 1.15), 2), // 15% markup
@@ -99,6 +100,6 @@ foreach ($hotelResponse['data']['hotels'] as $hotel) {
 
 // Output the result in JSON format
 header('Content-Type: application/json');
-echo json_encode($hotelData, JSON_PRETTY_PRINT);
+echo json_encode($hotelData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 exit();
 ?>
